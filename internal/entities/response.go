@@ -1,4 +1,4 @@
-package models
+package entities
 
 // APIResponse represents a standard API response
 type APIResponse struct {
