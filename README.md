@@ -1,47 +1,97 @@
 # FitByte API
 
-A RESTful API built with Go and Gin framework, following clean architecture principles and best practices.
+A comprehensive fitness tracking REST API built with Go, Gin, and GORM, following clean architecture principles and Repository-Service-Handler pattern.
 
-## Features
+## ✨ Features
 
-- 🚀 **Gin Framework** - Fast HTTP web framework
-- 📝 **Structured Logging** - Using zerolog for efficient logging
+- 🚀 **Gin Framework** - High-performance HTTP web framework
+- 🗄️ **GORM Integration** - Powerful ORM with SQLite database
+- 🏗️ **Clean Architecture** - Repository-Service-Handler pattern
+- 📊 **Advanced Filtering** - Complex query parameters with pagination
+- 🔄 **Base Entity** - Consistent database schema across all tables
+- 📝 **Structured Logging** - Efficient logging with zerolog
 - 🔒 **CORS Support** - Cross-origin resource sharing
-- 🏗️ **Clean Architecture** - Organized project structure
-- 📊 **Health Checks** - Built-in health and readiness endpoints
-- 🔧 **Environment Configuration** - Easy configuration management
-- 📋 **Standard REST API** - Following REST conventions
+- 📋 **RESTful API** - Following REST conventions
+- 🎯 **Dependency Injection** - Clean separation of concerns
+- ⚡ **Auto-Migration** - Database schema automatically managed
 
-## Project Structure
+## 🏛️ Architecture Overview
+
+### Why Repository-Service-Handler Pattern?
+
+We chose this architecture for several key reasons:
+
+1. **Separation of Concerns**: Each layer has a single responsibility
+   - **Repository**: Data access and database queries
+   - **Service**: Business logic and validation
+   - **Handler**: HTTP request/response handling
+
+2. **Testability**: Easy to mock dependencies and unit test each layer
+3. **Maintainability**: Changes in one layer don't affect others
+4. **Scalability**: Easy to add new features following the same pattern
+5. **Database Independence**: Repository layer abstracts database operations
+
+### Base Entity Design
+
+All database tables inherit from `BaseEntity`:
+```go
+type BaseEntity struct {
+    ID        uint      `json:"id" gorm:"primaryKey"`
+    CreatedAt time.Time `json:"created_at"`
+    UpdatedAt time.Time `json:"updated_at"`
+    IsActive  bool      `json:"is_active" gorm:"default:true"`
+}
+```
+
+**Benefits:**
+- **Consistency**: All tables have the same base fields
+- **Soft Delete**: Use `is_active` flag instead of hard deletion
+- **Audit Trail**: Automatic timestamps for creation and updates
+- **Maintainability**: Common fields managed in one place
+
+## 📁 Project Structure
 
 ```
 fitbyte/
-├── main.go                 # Application entry point
-├── go.mod                  # Go module file
-├── .env.example           # Environment variables template
-├── README.md              # This file
-└── internal/              # Private application code
-    ├── config/            # Configuration management
-    │   └── config.go
-    ├── handlers/          # HTTP request handlers
-    │   ├── health.go
-    │   └── user.go
-    ├── middleware/        # HTTP middleware
-    │   ├── cors.go
-    │   ├── logger.go
-    │   └── recovery.go
-    ├── models/            # Data models
-    │   ├── response.go
-    │   └── user.go
-    └── routes/            # Route definitions
-        └── routes.go
+├── main.go                    # Application entry point
+├── cmd/
+│   ├── app/main.go           # Alternative main entry
+│   └── server/               # Server configuration
+│       ├── handlers.go       # Handler initialization
+│       └── router.go         # Route definitions
+├── config/
+│   └── config.go             # Configuration management
+├── internal/
+│   ├── database/             # Database connection & migrations
+│   │   └── connection.go
+│   ├── entities/             # Data models & DTOs
+│   │   ├── base.go          # Base entity
+│   │   ├── user.go          # User entities
+│   │   ├── activity.go      # Activity entities
+│   │   └── response.go      # API response models
+│   ├── repositories/         # Data access layer
+│   │   ├── user.go          # User repository
+│   │   └── activity.go      # Activity repository
+│   ├── services/            # Business logic layer
+│   │   ├── user.go          # User service
+│   │   └── activity.go      # Activity service
+│   ├── handlers/            # HTTP handlers
+│   │   ├── health.go        # Health check handlers
+│   │   ├── user.go          # User HTTP handlers
+│   │   └── activity.go      # Activity HTTP handlers
+│   └── routes/              # Route setup (alternative)
+│       └── routes.go
+└── pkg/                     # Shared utilities
+    ├── logger.go            # Logging middleware
+    ├── recovery.go          # Recovery middleware
+    └── cors.go              # CORS middleware
 ```
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Go 1.25.0 or higher
+- Go 1.23+ or higher
 - Git
 
 ### Installation
@@ -57,91 +107,139 @@ fitbyte/
    go mod tidy
    ```
 
-3. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-4. **Run the application**
+3. **Run the application**
    ```bash
    go run main.go
+   # or
+   go run cmd/app/main.go
    ```
 
 The API will be available at `http://localhost:8080`
 
-## API Endpoints
+## 📚 API Endpoints
 
 ### Health Check
 - `GET /api/v1/health/` - Health status
 - `GET /api/v1/health/ready` - Readiness check
 
 ### Users
-- `GET /api/v1/users/` - Get all users (with pagination)
+- `GET /api/v1/users?limit=5&offset=0&isActive=true` - Get users with filtering
 - `GET /api/v1/users/:id` - Get user by ID
-- `POST /api/v1/users/` - Create new user
+- `POST /api/v1/users` - Create new user
 - `PUT /api/v1/users/:id` - Update user
-- `DELETE /api/v1/users/:id` - Delete user
+- `DELETE /api/v1/users/:id` - Soft delete user
 
-#### User Model
+### Activities
+- `GET /api/v1/activity?limit=5&offset=0&activityType=RUNNING&doneAtFrom=2023-01-01T00:00:00Z&doneAtTo=2023-12-31T23:59:59Z&caloriesBurnedMin=50&caloriesBurnedMax=500` - Get activities with advanced filtering
+- `POST /api/v1/activity` - Create new activity
+- `GET /api/v1/activity-types` - Get available activity types
+
+## 🔍 Advanced Filtering System
+
+### Activity Filtering Parameters
+
+All parameters are optional and use **AND** logic:
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `limit` | number | Results per page (default: 5) | `?limit=10` |
+| `offset` | number | Skip results (default: 0) | `?offset=20` |
+| `activityType` | string | Filter by activity type enum | `?activityType=RUNNING` |
+| `doneAtFrom` | ISO Date | Activities after/equal date | `?doneAtFrom=2023-01-01T00:00:00Z` |
+| `doneAtTo` | ISO Date | Activities before/equal date | `?doneAtTo=2023-12-31T23:59:59Z` |
+| `caloriesBurnedMin` | number | Minimum calories burned | `?caloriesBurnedMin=50` |
+| `caloriesBurnedMax` | number | Maximum calories burned | `?caloriesBurnedMax=500` |
+
+**Note**: Invalid parameter values are ignored, defaults are used for limit/offset.
+
+## 📋 Data Models
+
+### User Response
 ```json
 {
   "id": 1,
-  "email": "name@name.com",
+  "email": "john@example.com",
   "name": "John Doe",
-  "preference": "metric",
-  "weightUnit": "kg",
-  "heightUnit": "cm", 
+  "preference": "CARDIO",
+  "weightUnit": "KG", 
+  "heightUnit": "CM",
   "weight": 75.5,
   "height": 180.0,
-  "imageUri": "https://example.com/image.jpg"
+  "imageUri": "https://example.com/image.jpg",
+  "is_active": true,
+  "created_at": "2023-01-01T00:00:00Z",
+  "updated_at": "2023-01-01T00:00:00Z"
 }
 ```
 
-**Note:** All fields except `id` and `email` can be `null` when empty.
-
-### Root
-- `GET /` - API information
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ENVIRONMENT` | Application environment | `development` |
-| `PORT` | Server port | `8080` |
-| `DATABASE_URL` | Database connection string | - |
-| `JWT_SECRET` | JWT signing secret | `your-secret-key` |
-| `CORS_ALLOWED_ORIGINS` | Allowed CORS origins | `*` |
-
-## Development
-
-### Adding New Endpoints
-
-1. **Create a new handler** in `internal/handlers/`
-2. **Define models** in `internal/models/` if needed
-3. **Add routes** in `internal/routes/routes.go`
-4. **Update main.go** to initialize the new handler
-
-### Example: Adding a Product Handler
-
-```go
-// internal/handlers/product.go
-type ProductHandler struct{}
-
-func (h *ProductHandler) GetProducts(c *gin.Context) {
-    // Implementation
+### Activity Response
+```json
+{
+  "activityId": "1",
+  "activityType": "RUNNING",
+  "doneAt": "2023-01-01T08:00:00Z",
+  "durationInMinutes": 30,
+  "caloriesBurned": 300.0,
+  "createdAt": "2023-01-01T08:30:00Z"
 }
 ```
 
+### API Response Format
+```json
+{
+  "success": true,
+  "message": "Activities retrieved successfully",
+  "data": {
+    "activities": [...],
+    "meta": {
+      "total": 100,
+      "limit": 5,
+      "offset": 0
+    }
+  }
+}
+```
+
+## 🛠️ Development
+
+### Adding New Features
+
+Following the Repository-Service-Handler pattern:
+
+1. **Create Entity** in `internal/entities/`
+2. **Create Repository** in `internal/repositories/`
+3. **Create Service** in `internal/services/`
+4. **Create Handler** in `internal/handlers/`
+5. **Add to Handlers struct** in `cmd/server/handlers.go`
+6. **Add Routes** in `cmd/server/router.go`
+
+### Example: Adding Products
+
 ```go
-// internal/routes/routes.go
+// internal/entities/product.go
+type Product struct {
+    BaseEntity
+    Name  string  `json:"name"`
+    Price float64 `json:"price"`
+}
+
+// cmd/server/handlers.go
+type Handlers struct {
+    HealthHandler   *handlers.HealthHandler
+    UserHandler     *handlers.UserHandler
+    ActivityHandler *handlers.ActivityHandler
+    ProductHandler  *handlers.ProductHandler  // Add new handler
+}
+
+// cmd/server/router.go
 products := v1.Group("/products")
 {
-    products.GET("/", productHandler.GetProducts)
+    products.GET("/", h.ProductHandler.GetProducts)
+    products.POST("/", h.ProductHandler.CreateProduct)
 }
 ```
 
-## Building for Production
+## 🏗️ Building for Production
 
 ```bash
 # Build the application
@@ -151,45 +249,63 @@ go build -o fitbyte main.go
 ./fitbyte
 ```
 
-## Docker Support (Optional)
+## 🔧 Environment Variables
 
-Create a `Dockerfile`:
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ENVIRONMENT` | Application environment | `development` |
+| `PORT` | Server port | `8080` |
+| `DATABASE_URL` | Database connection string | `fitbyte.db` |
+| `JWT_SECRET` | JWT signing secret | `your-secret-key` |
 
-```dockerfile
-FROM golang:1.25-alpine AS builder
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN go build -o fitbyte main.go
+## 🏃‍♂️ Database
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
-COPY --from=builder /app/fitbyte .
-CMD ["./fitbyte"]
-```
+- **Database**: SQLite (development) / PostgreSQL (production ready)
+- **ORM**: GORM v2 with auto-migrations
+- **Seeded Data**: Pre-populated activity types with calorie rates
+- **Soft Delete**: All entities use `is_active` flag
 
-## Contributing
+### Available Activity Types
+- RUNNING (10 cal/min)
+- WALKING (5 cal/min)
+- CYCLING (8 cal/min)
+- SWIMMING (12 cal/min)
+- WEIGHT_LIFTING (6 cal/min)
+- YOGA (3 cal/min)
+- CARDIO (9 cal/min)
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+## 🧪 Architecture Benefits
 
-## License
+### Repository Layer
+- **Database abstraction**: Easy to switch databases
+- **Query optimization**: Centralized query logic
+- **Testability**: Easy to mock data layer
+
+### Service Layer
+- **Business logic**: All validation and processing
+- **Transaction management**: Handle complex operations
+- **Error handling**: Consistent error responses
+
+### Handler Layer
+- **HTTP concerns**: Request parsing, response formatting
+- **Authentication**: JWT validation (ready for implementation)
+- **Rate limiting**: Request throttling (ready for implementation)
+
+## 🚀 Next Steps
+
+- [x] GORM database integration
+- [x] Repository-Service-Handler pattern
+- [x] Base entity with soft delete
+- [x] Advanced filtering system
+- [x] Auto-migrations and seeding
+- [ ] JWT authentication
+- [ ] Rate limiting
+- [ ] API documentation (Swagger)
+- [ ] Unit & integration tests
+- [ ] Docker containerization
+- [ ] CI/CD pipeline
+- [ ] PostgreSQL production setup
+
+## 📄 License
 
 This project is licensed under the MIT License.
-
-## Next Steps
-
-- [ ] Add database integration (PostgreSQL/MySQL)
-- [ ] Implement authentication and authorization
-- [ ] Add input validation middleware
-- [ ] Add rate limiting
-- [ ] Add API documentation (Swagger)
-- [ ] Add unit tests
-- [ ] Add integration tests
-- [ ] Add Docker support
-- [ ] Add CI/CD pipeline

@@ -4,10 +4,10 @@ import (
 	"log"
 	"os"
 
+	"fitbyte/cmd/server"
 	"fitbyte/config"
-	"fitbyte/internal/handlers"
-	middleware "fitbyte/internal/middlewares"
-	"fitbyte/internal/routes"
+	"fitbyte/internal/database"
+	"fitbyte/pkg"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -22,6 +22,21 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
+	// Initialize database
+	if err := database.Connect(cfg.DatabaseURL); err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+
+	// Run database migrations
+	if err := database.AutoMigrate(); err != nil {
+		log.Fatal("Failed to migrate database:", err)
+	}
+
+	// Seed activity types
+	if err := database.SeedActivityTypes(); err != nil {
+		log.Fatal("Failed to seed activity types:", err)
+	}
+
 	// Set Gin mode
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -31,16 +46,15 @@ func main() {
 	router := gin.New()
 
 	// Add middleware
-	router.Use(middleware.Logger())
-	router.Use(middleware.Recovery())
-	router.Use(middleware.CORS())
+	router.Use(pkg.Logger())
+	router.Use(pkg.Recovery())
+	router.Use(pkg.CORS())
 
 	// Initialize handlers
-	healthHandler := handlers.NewHealthHandler()
-	userHandler := handlers.NewUserHandler()
+	handlers := server.NewHandlers()
 
 	// Setup routes
-	routes.SetupRoutes(router, healthHandler, userHandler)
+	server.SetupRoutes(router, handlers)
 
 	// Get port from environment or use default
 	port := os.Getenv("PORT")

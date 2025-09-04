@@ -1,239 +1,113 @@
 package repositories
 
 import (
-	"net/http"
-	"strconv"
+	"context"
+	"fitbyte/internal/entities"
 
-	models "fitbyte/internal/entities"
-
-	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-// UserHandler handles user-related endpoints
-type UserHandler struct {
-	// In a real application, you would inject a service or repository here
-	// userService services.UserService
-}
-
-// NewUserHandler creates a new user handler
-func NewUserHandler() *UserHandler {
-	return &UserHandler{}
-}
-
-// GetUsers returns a list of users
-func (h *UserHandler) GetUsers(c *gin.Context) {
-	// Parse pagination parameters
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
-
-	// In a real application, you would fetch users from a database
-	name1 := "John Doe"
-	name2 := "Jane Smith"
-	preference1 := "metric"
-	weightUnit1 := "kg"
-	heightUnit1 := "cm"
-	weight1 := 75.5
-	height1 := 180.0
-	imageURI1 := "https://example.com/image1.jpg"
-
-	users := []models.UserResponse{
-		{
-			ID:         1,
-			Email:      "john@example.com",
-			Name:       &name1,
-			Preference: &preference1,
-			WeightUnit: &weightUnit1,
-			HeightUnit: &heightUnit1,
-			Weight:     &weight1,
-			Height:     &height1,
-			ImageURI:   &imageURI1,
-		},
-		{
-			ID:    2,
-			Email: "jane@example.com",
-			Name:  &name2,
-			// Other fields are nil (null in JSON)
-		},
+type (
+	UserRepository interface {
+		GetUsersWithFilters(ctx context.Context, filter UserFilter) ([]entities.User, int64, error)
+		GetUser(ctx context.Context, filter UserFilter) (*entities.User, error)
+		CreateUser(ctx context.Context, user entities.User) (*entities.User, error)
+		UpdateUser(ctx context.Context, user entities.User) (*entities.User, error)
+		DeleteUser(ctx context.Context, id uint) error
 	}
 
-	c.JSON(http.StatusOK, models.PaginatedResponse{
-		Success: true,
-		Message: "Users retrieved successfully",
-		Data:    users,
-		Pagination: models.Pagination{
-			Page:       page,
-			Limit:      limit,
-			Total:      int64(len(users)),
-			TotalPages: 1,
-		},
-	})
+	userRepo struct {
+		db *gorm.DB
+	}
+
+	UserRepoParam struct {
+		DB *gorm.DB
+	}
+
+	UserFilter struct {
+		ID       *uint
+		Email    *string
+		IsActive *bool
+		Limit    int
+		Offset   int
+	}
+)
+
+func NewUserRepository(param UserRepoParam) UserRepository {
+	return &userRepo{
+		db: param.DB,
+	}
 }
 
-// GetUser returns a specific user by ID
-func (h *UserHandler) GetUser(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+func (repo *userRepo) GetUsersWithFilters(ctx context.Context, filter UserFilter) ([]entities.User, int64, error) {
+	var users []entities.User
+	var count int64
+
+	query := repo.db.WithContext(ctx).Model(&entities.User{})
+	
+	query = repo.applyFilters(query, filter)
+
+	if err := query.Count(&count).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.
+		Limit(filter.Limit).
+		Offset(filter.Offset).
+		Order("created_at DESC").
+		Find(&users).Error
+
+	return users, count, err
+}
+
+func (repo *userRepo) applyFilters(query *gorm.DB, filter UserFilter) *gorm.DB {
+	if filter.ID != nil {
+		query = query.Where("id = ?", *filter.ID)
+	}
+
+	if filter.Email != nil {
+		query = query.Where("email = ?", *filter.Email)
+	}
+
+	if filter.IsActive != nil {
+		query = query.Where("is_active = ?", *filter.IsActive)
+	}
+
+	return query
+}
+
+func (repo *userRepo) GetUser(ctx context.Context, filter UserFilter) (*entities.User, error) {
+	var user entities.User
+
+	query := repo.db.WithContext(ctx).Model(&entities.User{})
+	query = repo.applyFilters(query, filter)
+
+	err := query.First(&user).Error
 	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   "Invalid user ID",
-			Code:    http.StatusBadRequest,
-		})
-		return
+		return nil, err
 	}
 
-	// In a real application, you would fetch the user from a database
-	name := "John Doe"
-	preference := "metric"
-	weightUnit := "kg"
-	heightUnit := "cm"
-	weight := 75.5
-	height := 180.0
-	imageURI := "https://example.com/image1.jpg"
-
-	user := models.UserResponse{
-		ID:         uint(id),
-		Email:      "john@example.com",
-		Name:       &name,
-		Preference: &preference,
-		WeightUnit: &weightUnit,
-		HeightUnit: &heightUnit,
-		Weight:     &weight,
-		Height:     &height,
-		ImageURI:   &imageURI,
-	}
-
-	c.JSON(http.StatusOK, models.APIResponse{
-		Success: true,
-		Message: "User retrieved successfully",
-		Data:    user,
-	})
+	return &user, nil
 }
 
-// CreateUser creates a new user
-func (h *UserHandler) CreateUser(c *gin.Context) {
-	var req models.CreateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   err.Error(),
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	// In a real application, you would create the user in a database
-	user := models.UserResponse{
-		ID:         1,
-		Email:      req.Email,
-		Name:       req.Name,
-		Preference: req.Preference,
-		WeightUnit: req.WeightUnit,
-		HeightUnit: req.HeightUnit,
-		Weight:     req.Weight,
-		Height:     req.Height,
-		ImageURI:   req.ImageURI,
-	}
-
-	c.JSON(http.StatusCreated, models.APIResponse{
-		Success: true,
-		Message: "User created successfully",
-		Data:    user,
-	})
-}
-
-// UpdateUser updates an existing user
-func (h *UserHandler) UpdateUser(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+func (repo *userRepo) CreateUser(ctx context.Context, user entities.User) (*entities.User, error) {
+	err := repo.db.WithContext(ctx).Create(&user).Error
 	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   "Invalid user ID",
-			Code:    http.StatusBadRequest,
-		})
-		return
+		return nil, err
 	}
 
-	var req models.UpdateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   err.Error(),
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	// In a real application, you would update the user in a database
-	name := "John Doe"
-	preference := "metric"
-	weightUnit := "kg"
-	heightUnit := "cm"
-	weight := 75.5
-	height := 180.0
-	imageURI := "https://example.com/image1.jpg"
-
-	user := models.UserResponse{
-		ID:         uint(id),
-		Email:      "john@example.com",
-		Name:       &name,
-		Preference: &preference,
-		WeightUnit: &weightUnit,
-		HeightUnit: &heightUnit,
-		Weight:     &weight,
-		Height:     &height,
-		ImageURI:   &imageURI,
-	}
-
-	// Apply updates
-	if req.Email != nil {
-		user.Email = *req.Email
-	}
-	if req.Name != nil {
-		user.Name = req.Name
-	}
-	if req.Preference != nil {
-		user.Preference = req.Preference
-	}
-	if req.WeightUnit != nil {
-		user.WeightUnit = req.WeightUnit
-	}
-	if req.HeightUnit != nil {
-		user.HeightUnit = req.HeightUnit
-	}
-	if req.Weight != nil {
-		user.Weight = req.Weight
-	}
-	if req.Height != nil {
-		user.Height = req.Height
-	}
-	if req.ImageURI != nil {
-		user.ImageURI = req.ImageURI
-	}
-
-	c.JSON(http.StatusOK, models.APIResponse{
-		Success: true,
-		Message: "User updated successfully",
-		Data:    user,
-	})
+	return &user, nil
 }
 
-// DeleteUser deletes a user
-func (h *UserHandler) DeleteUser(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+func (repo *userRepo) UpdateUser(ctx context.Context, user entities.User) (*entities.User, error) {
+	err := repo.db.WithContext(ctx).Save(&user).Error
 	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   "Invalid user ID",
-			Code:    http.StatusBadRequest,
-		})
-		return
+		return nil, err
 	}
 
-	// In a real application, you would delete the user from a database
-	_ = id // Use the ID to delete the user
+	return &user, nil
+}
 
-	c.JSON(http.StatusOK, models.APIResponse{
-		Success: true,
-		Message: "User deleted successfully",
-	})
+func (repo *userRepo) DeleteUser(ctx context.Context, id uint) error {
+	return repo.db.WithContext(ctx).Model(&entities.User{}).Where("id = ?", id).Update("is_active", false).Error
 }

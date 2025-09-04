@@ -1,243 +1,171 @@
-package handlers
+package services
 
 import (
-	"net/http"
-	"strconv"
-
-	models "fitbyte/internal/entities"
-
-	"github.com/gin-gonic/gin"
+	"context"
+	"errors"
+	"fitbyte/internal/entities"
+	"fitbyte/internal/repositories"
+	"fmt"
+	"time"
 )
 
-// UserHandler handles user-related endpoints
-type UserHandler struct {
-	// In a real application, you would inject a service or repository here
-	// userService services.UserService
-}
-
-// NewUserHandler creates a new user handler
-func NewUserHandler() *UserHandler {
-	return &UserHandler{}
-}
-
-// GetUsers returns a list of users
-func (h *UserHandler) GetUsers(c *gin.Context) {
-	// Parse pagination parameters
-	// if err := c.ShouldBindQuery(&req); err != nil {
-	// 	response.Error(c, response.WithError(c.Request.Context(), err))
-	// 	return
-	// }
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
-
-	// In a real application, you would fetch users from a database
-	name1 := "John Doe"
-	name2 := "Jane Smith"
-	preference1 := "metric"
-	weightUnit1 := "kg"
-	heightUnit1 := "cm"
-	weight1 := 75.5
-	height1 := 180.0
-	imageURI1 := "https://example.com/image1.jpg"
-
-	users := []models.UserResponse{
-		{
-			ID:         1,
-			Email:      "john@example.com",
-			Name:       &name1,
-			Preference: &preference1,
-			WeightUnit: &weightUnit1,
-			HeightUnit: &heightUnit1,
-			Weight:     &weight1,
-			Height:     &height1,
-			ImageURI:   &imageURI1,
-		},
-		{
-			ID:    2,
-			Email: "jane@example.com",
-			Name:  &name2,
-			// Other fields are nil (null in JSON)
-		},
+type (
+	UserService interface {
+		GetUsersWithFilters(ctx context.Context, filter UserServiceFilter) (*entities.APIResponse, error)
+		GetUser(ctx context.Context, id uint) (*entities.UserResponse, error)
+		CreateUser(ctx context.Context, request entities.CreateUserRequest) (*entities.UserResponse, error)
+		UpdateUser(ctx context.Context, id uint, request entities.UpdateUserRequest) (*entities.UserResponse, error)
+		DeleteUser(ctx context.Context, id uint) error
 	}
 
-	c.JSON(http.StatusOK, models.PaginatedResponse{
+	userService struct {
+		userRepository repositories.UserRepository
+	}
+
+	UserServiceParam struct {
+		UserRepository repositories.UserRepository
+	}
+
+	UserServiceFilter struct {
+		Limit    int
+		Offset   int
+		IsActive *bool
+	}
+)
+
+func NewUserService(param UserServiceParam) UserService {
+	return &userService{
+		userRepository: param.UserRepository,
+	}
+}
+
+func (svc *userService) GetUsersWithFilters(ctx context.Context, serviceFilter UserServiceFilter) (*entities.APIResponse, error) {
+	repoFilter := repositories.UserFilter{
+		Limit:    serviceFilter.Limit,
+		Offset:   serviceFilter.Offset,
+		IsActive: serviceFilter.IsActive,
+	}
+
+	users, total, err := svc.userRepository.GetUsersWithFilters(ctx, repoFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users: %w", err)
+	}
+
+	userResponses := make([]entities.UserResponse, len(users))
+	for i, user := range users {
+		userResponses[i] = svc.mapToUserResponse(user)
+	}
+
+	return &entities.APIResponse{
 		Success: true,
 		Message: "Users retrieved successfully",
-		Data:    users,
-		Pagination: models.Pagination{
-			Page:       page,
-			Limit:      limit,
-			Total:      int64(len(users)),
-			TotalPages: 1,
+		Data: map[string]any{
+			"users": userResponses,
+			"meta": map[string]any{
+				"total":  total,
+				"limit":  serviceFilter.Limit,
+				"offset": serviceFilter.Offset,
+			},
 		},
-	})
+	}, nil
 }
 
-// GetUser returns a specific user by ID
-func (h *UserHandler) GetUser(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+func (svc *userService) GetUser(ctx context.Context, id uint) (*entities.UserResponse, error) {
+	filter := repositories.UserFilter{
+		ID: &id,
+	}
+
+	user, err := svc.userRepository.GetUser(ctx, filter)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   "Invalid user ID",
-			Code:    http.StatusBadRequest,
-		})
-		return
+		return nil, errors.New("user not found")
 	}
 
-	// In a real application, you would fetch the user from a database
-	name := "John Doe"
-	preference := "metric"
-	weightUnit := "kg"
-	heightUnit := "cm"
-	weight := 75.5
-	height := 180.0
-	imageURI := "https://example.com/image1.jpg"
-
-	user := models.UserResponse{
-		ID:         uint(id),
-		Email:      "john@example.com",
-		Name:       &name,
-		Preference: &preference,
-		WeightUnit: &weightUnit,
-		HeightUnit: &heightUnit,
-		Weight:     &weight,
-		Height:     &height,
-		ImageURI:   &imageURI,
-	}
-
-	c.JSON(http.StatusOK, models.APIResponse{
-		Success: true,
-		Message: "User retrieved successfully",
-		Data:    user,
-	})
+	response := svc.mapToUserResponse(*user)
+	return &response, nil
 }
 
-// CreateUser creates a new user
-func (h *UserHandler) CreateUser(c *gin.Context) {
-	var req models.CreateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   err.Error(),
-			Code:    http.StatusBadRequest,
-		})
-		return
+func (svc *userService) CreateUser(ctx context.Context, request entities.CreateUserRequest) (*entities.UserResponse, error) {
+	user := entities.User{
+		Email:      request.Email,
+		Name:       request.Name,
+		Preference: request.Preference,
+		WeightUnit: request.WeightUnit,
+		HeightUnit: request.HeightUnit,
+		Weight:     request.Weight,
+		Height:     request.Height,
+		ImageURI:   request.ImageURI,
 	}
 
-	// In a real application, you would create the user in a database
-	user := models.UserResponse{
-		ID:         1,
-		Email:      req.Email,
-		Name:       req.Name,
-		Preference: req.Preference,
-		WeightUnit: req.WeightUnit,
-		HeightUnit: req.HeightUnit,
-		Weight:     req.Weight,
-		Height:     req.Height,
-		ImageURI:   req.ImageURI,
-	}
-
-	c.JSON(http.StatusCreated, models.APIResponse{
-		Success: true,
-		Message: "User created successfully",
-		Data:    user,
-	})
-}
-
-// UpdateUser updates an existing user
-func (h *UserHandler) UpdateUser(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	createdUser, err := svc.userRepository.CreateUser(ctx, user)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   "Invalid user ID",
-			Code:    http.StatusBadRequest,
-		})
-		return
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	var req models.UpdateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   err.Error(),
-			Code:    http.StatusBadRequest,
-		})
-		return
-	}
-
-	// In a real application, you would update the user in a database
-	name := "John Doe"
-	preference := "metric"
-	weightUnit := "kg"
-	heightUnit := "cm"
-	weight := 75.5
-	height := 180.0
-	imageURI := "https://example.com/image1.jpg"
-
-	user := models.UserResponse{
-		ID:         uint(id),
-		Email:      "john@example.com",
-		Name:       &name,
-		Preference: &preference,
-		WeightUnit: &weightUnit,
-		HeightUnit: &heightUnit,
-		Weight:     &weight,
-		Height:     &height,
-		ImageURI:   &imageURI,
-	}
-
-	// Apply updates
-	if req.Email != nil {
-		user.Email = *req.Email
-	}
-	if req.Name != nil {
-		user.Name = req.Name
-	}
-	if req.Preference != nil {
-		user.Preference = req.Preference
-	}
-	if req.WeightUnit != nil {
-		user.WeightUnit = req.WeightUnit
-	}
-	if req.HeightUnit != nil {
-		user.HeightUnit = req.HeightUnit
-	}
-	if req.Weight != nil {
-		user.Weight = req.Weight
-	}
-	if req.Height != nil {
-		user.Height = req.Height
-	}
-	if req.ImageURI != nil {
-		user.ImageURI = req.ImageURI
-	}
-
-	c.JSON(http.StatusOK, models.APIResponse{
-		Success: true,
-		Message: "User updated successfully",
-		Data:    user,
-	})
+	response := svc.mapToUserResponse(*createdUser)
+	return &response, nil
 }
 
-// DeleteUser deletes a user
-func (h *UserHandler) DeleteUser(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Success: false,
-			Error:   "Invalid user ID",
-			Code:    http.StatusBadRequest,
-		})
-		return
+func (svc *userService) UpdateUser(ctx context.Context, id uint, request entities.UpdateUserRequest) (*entities.UserResponse, error) {
+	filter := repositories.UserFilter{
+		ID: &id,
 	}
 
-	// In a real application, you would delete the user from a database
-	_ = id // Use the ID to delete the user
+	existingUser, err := svc.userRepository.GetUser(ctx, filter)
+	if err != nil {
+		return nil, errors.New("user not found")
+	}
 
-	c.JSON(http.StatusOK, models.APIResponse{
-		Success: true,
-		Message: "User deleted successfully",
-	})
+	if request.Email != nil {
+		existingUser.Email = *request.Email
+	}
+	if request.Name != nil {
+		existingUser.Name = request.Name
+	}
+	if request.Preference != nil {
+		existingUser.Preference = request.Preference
+	}
+	if request.WeightUnit != nil {
+		existingUser.WeightUnit = request.WeightUnit
+	}
+	if request.HeightUnit != nil {
+		existingUser.HeightUnit = request.HeightUnit
+	}
+	if request.Weight != nil {
+		existingUser.Weight = request.Weight
+	}
+	if request.Height != nil {
+		existingUser.Height = request.Height
+	}
+	if request.ImageURI != nil {
+		existingUser.ImageURI = request.ImageURI
+	}
+
+	updatedUser, err := svc.userRepository.UpdateUser(ctx, *existingUser)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
+	}
+
+	response := svc.mapToUserResponse(*updatedUser)
+	return &response, nil
+}
+
+func (svc *userService) DeleteUser(ctx context.Context, id uint) error {
+	return svc.userRepository.DeleteUser(ctx, id)
+}
+
+func (svc *userService) mapToUserResponse(user entities.User) entities.UserResponse {
+	return entities.UserResponse{
+		ID:         user.ID,
+		Email:      user.Email,
+		Name:       user.Name,
+		Preference: user.Preference,
+		WeightUnit: user.WeightUnit,
+		HeightUnit: user.HeightUnit,
+		Weight:     user.Weight,
+		Height:     user.Height,
+		ImageURI:   user.ImageURI,
+		IsActive:   user.IsActive,
+		CreatedAt:  user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:  user.UpdatedAt.Format(time.RFC3339),
+	}
 }

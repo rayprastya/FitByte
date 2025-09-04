@@ -1,4 +1,4 @@
-package middleware
+package pkg
 
 import (
 	"github.com/gin-contrib/cors"
